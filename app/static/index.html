@@ -1,1 +1,101 @@
-<!doctype html><title>geomeasure</title>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>geomeasure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">geomeasure</div>
+    <nav>
+      <a href="/docs" target="_blank" rel="noopener">API docs</a>
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>Upload</h2>
+        <label class="dropzone" id="dropzone">
+          <input type="file" id="file-input" accept=".zip,.kml" hidden>
+          <span class="dropzone-title">Drop a file here or browse</span>
+          <span class="dropzone-hint">Shapefile as .zip, or .kml</span>
+        </label>
+        <p class="upload-status" id="upload-status" role="status"></p>
+      </section>
+
+      <section class="panel files-panel">
+        <h2>Recent files</h2>
+        <ul class="file-list" id="file-list"></ul>
+      </section>
+    </aside>
+
+    <main class="content">
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="basemap-switch" role="group" aria-label="Basemap">
+          <button type="button" data-basemap="streets" class="active">Map</button>
+          <button type="button" data-basemap="satellite">Satellite</button>
+        </div>
+      </div>
+
+      <section class="details" id="details" hidden>
+        <div class="details-head">
+          <div>
+            <h1 id="file-title"></h1>
+            <p class="meta" id="file-meta"></p>
+          </div>
+          <div class="details-actions">
+            <label class="unit-select">
+              Area in
+              <select id="area-unit">
+                <option value="m2">m²</option>
+                <option value="ha">hectares</option>
+                <option value="ac">acres</option>
+              </select>
+            </label>
+            <button type="button" class="btn-quiet" id="delete-btn">Delete</button>
+          </div>
+        </div>
+
+        <div class="error-box" id="error-box" hidden></div>
+        <ul class="warnings" id="warnings" hidden></ul>
+
+        <dl class="summary" id="summary"></dl>
+
+        <div class="table-wrap">
+          <table class="features">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Layer</th>
+                <th>Type</th>
+                <th class="num">Area</th>
+                <th class="num">Perimeter</th>
+                <th class="num">Length</th>
+                <th>Measured in</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody id="feature-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="empty" id="empty-state">
+        <p>Upload a Shapefile or KML to see its features on the map with area and length in metric units.</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
