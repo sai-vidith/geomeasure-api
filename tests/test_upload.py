@@ -124,6 +124,23 @@ def test_features_endpoint_returns_geojson_in_wgs84(client, upload, workdir):
     assert source["features"][0]["geometry"]["coordinates"][0][0][0] > 1000
 
 
+def test_kml_display_fields_are_not_reported_as_properties(client, upload, workdir):
+    file_id = upload("survey.kml", kml_bytes(_square_frame(), workdir)).json()["id"]
+
+    props = client.get(f"/api/files/{file_id}/features/").json()["features"][0]["properties"]
+
+    assert props["Name"] == "plot"
+    assert not {"tessellate", "extrude", "visibility"} & props.keys()
+
+
+def test_created_at_keeps_utc_offset(client, upload, workdir):
+    file_id = upload("survey.kml", kml_bytes(_square_frame(), workdir)).json()["id"]
+
+    created_at = client.get(f"/api/files/{file_id}/").json()["created_at"]
+
+    assert created_at.endswith("Z") or created_at.endswith("+00:00")
+
+
 def test_properties_are_cleaned(client, upload, workdir):
     frame = gpd.GeoDataFrame(
         {"name": ["marker"], "owner": [None]}, geometry=[Point(77.5, 12.9)], crs=4326

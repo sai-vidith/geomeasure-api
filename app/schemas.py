@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models import FileStatus
 
@@ -24,6 +24,12 @@ class FileInfo(BaseModel):
     warnings: list[str]
     error: str | None
     created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def _assume_utc(cls, value: datetime) -> datetime:
+        # SQLite has no timezone type and returns naive datetimes; they are stored as UTC.
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 class FeatureMeasurement(BaseModel):

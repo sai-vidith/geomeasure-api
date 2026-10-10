@@ -16,6 +16,10 @@ from app.services.storage import ShapefileLayer
 # Lets GDAL rebuild a missing .shx index from the .shp instead of refusing to open it.
 pyogrio.set_gdal_config_options({"SHAPE_RESTORE_SHX": True})
 
+# Rendering hints the LIBKML driver exposes as columns on every feature (with -1
+# meaning "not set"). They describe how Google Earth draws a shape, not the data.
+KML_DISPLAY_FIELDS = ("tessellate", "extrude", "visibility", "drawOrder", "icon", "altitudeMode")
+
 
 @dataclass
 class ParsedLayer:
@@ -32,6 +36,7 @@ def read_kml(path: Path) -> list[ParsedLayer]:
     layers = []
     for name in layer_names:
         frame = gpd.read_file(path, layer=name)
+        frame = frame.drop(columns=[c for c in KML_DISPLAY_FIELDS if c in frame.columns])
         # The KML spec mandates WGS84, so a missing CRS here is not ambiguous.
         layers.append(ParsedLayer(name=name, frame=frame, crs=frame.crs or WGS84))
     return layers
