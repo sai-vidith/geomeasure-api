@@ -65,7 +65,7 @@ def upload_file(file: UploadFile, db: DbSession):
 
     if record.status == FileStatus.FAILED:
         body = FileInfo.model_validate(record).model_dump(mode="json")
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=body)
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=body)
     return record
 
 

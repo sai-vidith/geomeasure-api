@@ -46,9 +46,11 @@ def _store_layers(record: UploadedFile, layers: list[ParsedLayer], warnings: lis
         warnings.extend(layer.warnings)
         label = crs_label(layer.crs)
         frame = layer.frame
-        attributes = frame.drop(columns=frame.geometry.name).to_dict("records")
+        # to_dict("records") returns [] for a frame with rows but no attribute columns
+        # (e.g. a shapefile without its .dbf); "index" keeps one dict per row.
+        attributes = frame.drop(columns=frame.geometry.name).to_dict("index").values()
 
-        for geom, props in zip(frame.geometry, attributes):
+        for geom, props in zip(frame.geometry, attributes, strict=True):
             result = measure(geom, layer.crs)
             record.features.append(
                 Feature(
