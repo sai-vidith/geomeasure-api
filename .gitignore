@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+
+# Local runtime data
+data/
+*.db
+*.sqlite3
+
+# Assignment brief (not part of the project)
+docs/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
