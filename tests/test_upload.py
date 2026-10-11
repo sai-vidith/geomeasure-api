@@ -25,6 +25,43 @@ def test_kml_upload_returns_file_info(upload, workdir):
     assert body["feature_count"] == 1
 
 
+def test_kmz_upload_reads_the_kml_inside(client, upload, workdir):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("doc.kml", kml_bytes(_square_frame(), workdir))
+
+    response = upload("survey.kmz", buffer.getvalue())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["file_type"] == "kmz"
+    assert body["crs"] == "EPSG:4326"
+    measurements = client.get(f"/api/files/{body['id']}/measurements/").json()
+    assert measurements["features"][0]["area_m2"] > 0
+
+
+def test_rejects_kmz_without_kml(upload):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("notes.txt", "nothing useful")
+
+    response = upload("empty.kmz", buffer.getvalue())
+
+    assert response.status_code == 400
+    assert "does not contain a .kml" in response.json()["detail"]
+
+
+def test_zip_holding_a_kml_gets_a_helpful_message(upload, workdir):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("survey.kml", kml_bytes(_square_frame(), workdir))
+
+    response = upload("survey.zip", buffer.getvalue())
+
+    assert response.status_code == 400
+    assert "rename the archive to .kmz" in response.json()["detail"]
+
+
 def test_get_file_info(client, upload, workdir):
     file_id = upload("survey.kml", kml_bytes(_square_frame(), workdir)).json()["id"]
 

@@ -24,6 +24,7 @@ from app.services.measure import WGS84, reproject
 from app.services.processing import process_file
 from app.services.storage import (
     InvalidUpload,
+    check_kmz,
     detect_file_type,
     extract_shapefile,
     remove_upload,
@@ -50,10 +51,11 @@ def upload_file(file: UploadFile, db: DbSession):
     try:
         file_type = detect_file_type(filename)
         path = save_upload(file_id, filename, file.file)
+        shapefile_layers, archive_warnings = None, []
         if file_type == "shapefile":
             shapefile_layers, archive_warnings = extract_shapefile(path)
-        else:
-            shapefile_layers, archive_warnings = None, []
+        elif file_type == "kmz":
+            check_kmz(path)
     except InvalidUpload as exc:
         remove_upload(file_id)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

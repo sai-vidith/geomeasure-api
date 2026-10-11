@@ -13,7 +13,7 @@ from typing import BinaryIO
 
 from app.config import settings
 
-ALLOWED_EXTENSIONS = {".zip": "shapefile", ".kml": "kml"}
+ALLOWED_EXTENSIONS = {".zip": "shapefile", ".kml": "kml", ".kmz": "kmz"}
 CHUNK_SIZE = 1024 * 1024
 # Guard against zip bombs: refuse archives that expand far beyond the upload limit.
 MAX_EXPANSION_RATIO = 10
@@ -67,6 +67,26 @@ def remove_upload(file_id: str) -> None:
     shutil.rmtree(upload_dir_for(file_id), ignore_errors=True)
 
 
+def check_kmz(kmz_path: Path) -> None:
+    """A KMZ is a zip with a KML inside (Google Earth's default save format).
+
+    GDAL reads it in place, so nothing is extracted; this only confirms the
+    archive is what it claims to be before it is handed to the parser.
+    """
+    if not zipfile.is_zipfile(kmz_path):
+        raise InvalidUpload("File is not a valid KMZ archive")
+    with zipfile.ZipFile(kmz_path) as archive:
+        _check_expanded_size(archive)
+        if not any(name.lower().endswith(".kml") for name in archive.namelist()):
+            raise InvalidUpload("KMZ archive does not contain a .kml file")
+
+
+def _check_expanded_size(archive: zipfile.ZipFile) -> None:
+    total_size = sum(member.file_size for member in archive.infolist())
+    if total_size > settings.max_upload_mb * 1024 * 1024 * MAX_EXPANSION_RATIO:
+        raise InvalidUpload("Archive expands to an unreasonably large size")
+
+
 def extract_shapefile(zip_path: Path) -> tuple[list[ShapefileLayer], list[str]]:
     """Unzip a shapefile archive and return every distinct layer inside it.
 
@@ -80,11 +100,8 @@ def extract_shapefile(zip_path: Path) -> tuple[list[ShapefileLayer], list[str]]:
     extract_dir.mkdir(exist_ok=True)
 
     with zipfile.ZipFile(zip_path) as archive:
-        members = archive.infolist()
-        total_size = sum(m.file_size for m in members)
-        if total_size > settings.max_upload_mb * 1024 * 1024 * MAX_EXPANSION_RATIO:
-            raise InvalidUpload("Archive expands to an unreasonably large size")
-        for member in members:
+        _check_expanded_size(archive)
+        for member in archive.infolist():
             # Zip-slip guard: a member like "../../app/main.py" must not escape extract_dir.
             destination = (extract_dir / member.filename).resolve()
             if not destination.is_relative_to(extract_dir.resolve()):
@@ -100,6 +117,11 @@ def extract_shapefile(zip_path: Path) -> tuple[list[ShapefileLayer], list[str]]:
         and not p.name.startswith("._")
     )
     if not shp_files:
+        if any(p.suffix.lower() == ".kml" for p in extract_dir.rglob("*")):
+            raise InvalidUpload(
+                "This zip contains a KML, not a shapefile. Upload the .kml on its own, "
+                "or rename the archive to .kmz."
+            )
         raise InvalidUpload(
             "No .shp file found in the archive. Expected at least a .shp with its .shx and .dbf "
             "(and ideally .prj) sharing the same base name."

@@ -3,6 +3,7 @@
     python scripts/make_samples.py
 
 site_survey.kml      three KML folders (plots, access tracks, control points) in WGS84
+site_survey.kmz      the same KML zipped, the way Google Earth saves it
 parcels_utm.zip      the same plots as a shapefile in UTM zone 43N (EPSG:32643)
 parcels_no_prj.zip   the plots in WGS84 with the .prj removed, to show CRS inference
 """
@@ -83,6 +84,8 @@ def main() -> None:
     shutil.rmtree(OUT, ignore_errors=True)
     OUT.mkdir()
     (OUT / "site_survey.kml").write_text(build_kml(), encoding="utf-8")
+    with zipfile.ZipFile(OUT / "site_survey.kmz", "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.write(OUT / "site_survey.kml", "doc.kml")
 
     plots = gpd.GeoDataFrame(
         {"name": list(PLOTS), "owner": ["Survey No. 41", "Survey No. 42", "Survey No. 47"]},

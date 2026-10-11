@@ -25,7 +25,7 @@ def process_file(
     """Populate `record` in place. Any failure marks the record FAILED instead of
     raising, so the client still gets an id it can look up later."""
     try:
-        if record.file_type == "kml":
+        if record.file_type in ("kml", "kmz"):
             layers = read_kml(path)
         else:
             layers = read_shapefiles(shapefile_layers or [])

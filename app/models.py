@@ -23,7 +23,7 @@ class UploadedFile(Base):
 
     id: Mapped[str] = mapped_column(String(12), primary_key=True, default=new_file_id)
     filename: Mapped[str] = mapped_column(String(255))
-    file_type: Mapped[str] = mapped_column(String(16))  # "shapefile" | "kml"
+    file_type: Mapped[str] = mapped_column(String(16))  # "shapefile" | "kml" | "kmz"
     status: Mapped[FileStatus] = mapped_column(Enum(FileStatus), default=FileStatus.PROCESSING)
     # Single CRS label when every layer agrees, "mixed" when they differ.
     crs: Mapped[str | None] = mapped_column(String(64))
