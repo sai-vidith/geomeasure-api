@@ -45,12 +45,20 @@ class FeatureMeasurement(BaseModel):
     note: str | None
 
 
+class LayerSummary(BaseModel):
+    name: str
+    feature_count: int
+    area_m2: float
+    length_m: float
+
+
 class MeasurementSummary(BaseModel):
     total_area_m2: float
     total_length_m: float
     measured_features: int
     unmeasured_features: int
     geometry_types: dict[str, int]
+    layers: list[LayerSummary]
 
 
 class MeasurementsResponse(BaseModel):

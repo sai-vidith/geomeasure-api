@@ -6,6 +6,7 @@ CPU-bound calls; FastAPI runs sync routes in a thread pool, so one slow upload
 does not freeze the event loop for every other request.
 """
 
+import json
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Literal
@@ -18,8 +19,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import FileStatus, UploadedFile, new_file_id
-from app.schemas import FeatureMeasurement, FileInfo, MeasurementsResponse, MeasurementSummary
+from app.models import Feature, FileStatus, UploadedFile, new_file_id
+from app.schemas import (
+    FeatureMeasurement,
+    FileInfo,
+    LayerSummary,
+    MeasurementsResponse,
+    MeasurementSummary,
+)
+from app.services.export import download_name, measurements_csv
 from app.services.measure import WGS84, reproject
 from app.services.processing import process_file
 from app.services.storage import (
@@ -34,6 +42,10 @@ from app.services.storage import (
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 DbSession = Annotated[Session, Depends(get_db)]
+LayerFilter = Annotated[str | None, Query(description="Only features from this layer")]
+TypeFilter = Annotated[
+    str | None, Query(description="Only this geometry type, e.g. Polygon (case-insensitive)")
+]
 
 
 @router.post(
@@ -83,22 +95,47 @@ def get_file(file_id: str, db: DbSession):
 
 
 @router.get("/{file_id}/measurements/", response_model=MeasurementsResponse)
-def get_measurements(file_id: str, db: DbSession):
+def get_measurements(
+    file_id: str, db: DbSession, layer: LayerFilter = None, geometry_type: TypeFilter = None
+):
+    """Measurements for every feature. The summary covers only the features returned,
+    so filtering by layer gives that layer's totals."""
     record = _get_ready_or_409(db, file_id)
-    features = record.features
-    measured = [f for f in features if f.area_m2 is not None or f.length_m is not None]
-    summary = MeasurementSummary(
-        total_area_m2=round(sum(f.area_m2 or 0 for f in features), 3),
-        total_length_m=round(sum(f.length_m or 0 for f in features), 3),
-        measured_features=len(measured),
-        unmeasured_features=len(features) - len(measured),
-        geometry_types=dict(Counter(f.geometry_type or "None" for f in features)),
-    )
+    features = _select_features(record, layer, geometry_type)
     return MeasurementsResponse(
         file_id=record.id,
         crs=record.crs,
-        summary=summary,
+        summary=_summarise(features),
         features=[FeatureMeasurement.model_validate(f) for f in features],
+    )
+
+
+@router.get(
+    "/{file_id}/export/",
+    responses={200: {"content": {"text/csv": {}, "application/geo+json": {}}}},
+)
+def export_file(
+    file_id: str,
+    db: DbSession,
+    format: Annotated[Literal["csv", "geojson"], Query()] = "csv",
+    layer: LayerFilter = None,
+    geometry_type: TypeFilter = None,
+):
+    """Download the results as a file: a CSV for spreadsheets, or GeoJSON for GIS tools."""
+    record = _get_ready_or_409(db, file_id)
+    features = _select_features(record, layer, geometry_type)
+    if format == "csv":
+        content = measurements_csv(features)
+        media_type = "text/csv; charset=utf-8"
+        name = download_name(record.filename, "_measurements.csv")
+    else:
+        content = json.dumps(_feature_collection(record, features, "wgs84"))
+        media_type = "application/geo+json"
+        name = download_name(record.filename, ".geojson")
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
 
 
@@ -110,16 +147,22 @@ def get_features(
         Literal["wgs84", "source"],
         Query(description="wgs84 (GeoJSON standard, default) or the file's original CRS"),
     ] = "wgs84",
+    layer: LayerFilter = None,
+    geometry_type: TypeFilter = None,
 ) -> dict:
     """Every feature as a GeoJSON FeatureCollection, with attributes and measurements."""
     record = _get_ready_or_409(db, file_id)
+    return _feature_collection(record, _select_features(record, layer, geometry_type), crs)
+
+
+def _feature_collection(record: UploadedFile, features: list[Feature], crs: str) -> dict:
     layer_crs = {
         layer["name"]: CRS.from_wkt(layer["crs_wkt"]) if layer.get("crs_wkt") else None
         for layer in record.layers
     }
 
     collection = []
-    for f in record.features:
+    for f in features:
         geometry = f.geometry
         source_crs = layer_crs.get(f.layer)
         if crs == "wgs84" and geometry is not None:
@@ -153,6 +196,47 @@ def delete_file(file_id: str, db: DbSession):
     db.commit()
     remove_upload(file_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _select_features(
+    record: UploadedFile, layer: str | None, geometry_type: str | None
+) -> list[Feature]:
+    features = list(record.features)
+    if layer is not None:
+        known = [info["name"] for info in record.layers]
+        if layer not in known:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"Layer '{layer}' not found. Layers in this file: {', '.join(known) or 'none'}",
+            )
+        features = [f for f in features if f.layer == layer]
+    if geometry_type is not None:
+        wanted = geometry_type.lower()
+        features = [f for f in features if (f.geometry_type or "").lower() == wanted]
+    return features
+
+
+def _summarise(features: list[Feature]) -> MeasurementSummary:
+    measured = [f for f in features if f.area_m2 is not None or f.length_m is not None]
+    by_layer: dict[str, list[Feature]] = {}
+    for f in features:
+        by_layer.setdefault(f.layer, []).append(f)
+    return MeasurementSummary(
+        total_area_m2=round(sum(f.area_m2 or 0 for f in features), 3),
+        total_length_m=round(sum(f.length_m or 0 for f in features), 3),
+        measured_features=len(measured),
+        unmeasured_features=len(features) - len(measured),
+        geometry_types=dict(Counter(f.geometry_type or "None" for f in features)),
+        layers=[
+            LayerSummary(
+                name=name,
+                feature_count=len(group),
+                area_m2=round(sum(f.area_m2 or 0 for f in group), 3),
+                length_m=round(sum(f.length_m or 0 for f in group), 3),
+            )
+            for name, group in by_layer.items()
+        ],
+    )
 
 
 def _get_or_404(db: Session, file_id: str) -> UploadedFile:
