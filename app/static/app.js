@@ -15,9 +15,13 @@ const AREA_UNITS = {
   ac: { label: "ac", factor: 1 / 4046.8564224, digits: 3 },
 };
 
+const FILE_TYPES = { shapefile: "Shapefile", kml: "KML", kmz: "KMZ" };
+
 const state = {
   files: [],
   currentId: null,
+  info: null,
+  layer: null, // null = all layers
   measurements: null,
   featureLayers: new Map(), // feature index -> Leaflet layer
   activeIndex: null,
@@ -159,6 +163,12 @@ const dropzone = $("dropzone");
 const fileInput = $("file-input");
 
 fileInput.addEventListener("change", () => fileInput.files[0] && uploadFile(fileInput.files[0]));
+dropzone.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
 
 ["dragenter", "dragover"].forEach((type) => dropzone.addEventListener(type, (event) => {
   event.preventDefault();
@@ -196,25 +206,45 @@ async function uploadFile(file) {
   }
 }
 
+// ---------- Samples ----------
+
+async function loadSamples() {
+  const samples = await request("/api/samples/");
+  if (!samples.length) return;
+  const box = $("samples");
+  box.hidden = false;
+  box.innerHTML = "No file handy? Try a sample:" + samples.map((s, i) => `<button type="button" data-sample="${i}">${escapeHtml(s.name)}</button>`).join("");
+  box.querySelectorAll("[data-sample]").forEach((button) => button.addEventListener("click", async () => {
+    const sample = samples[Number(button.dataset.sample)];
+    const blob = await (await fetch(sample.url)).blob();
+    uploadFile(new File([blob], sample.name));
+  }));
+}
+
 // ---------- File details ----------
 
 async function openFile(id) {
   state.currentId = id;
   state.activeIndex = null;
+  state.layer = null;
   history.replaceState(null, "", `#${id}`); // makes the current file linkable
   renderFileList();
 
   const info = await request(`${API}${id}/`);
+  state.info = info;
   $("empty-state").hidden = true;
   $("details").hidden = false;
   $("file-title").textContent = info.filename;
   const layerNote = info.layers.length > 1 ? ` · ${info.layers.length} layers` : "";
-  $("file-meta").textContent = `${info.file_type === "kml" ? "KML" : "Shapefile"} · ${info.feature_count} features · CRS ${info.crs ?? "unknown"}${layerNote}`;
+  $("file-meta").textContent = `${FILE_TYPES[info.file_type] ?? info.file_type} · ${info.feature_count} features · CRS ${info.crs ?? "unknown"}${layerNote}`;
 
   renderWarnings(info.warnings);
   const errorBox = $("error-box");
   errorBox.hidden = info.status !== "FAILED";
   errorBox.textContent = info.error ?? "";
+
+  $("result-actions").hidden = info.status !== "COMPLETED";
+  renderLayerFilter();
 
   if (info.status !== "COMPLETED") {
     state.measurements = null;
@@ -224,15 +254,51 @@ async function openFile(id) {
     return;
   }
 
+  await loadResults();
+}
+
+// Fetches measurements and geometry for the current file, limited to the chosen layer.
+async function loadResults() {
+  const id = state.currentId;
+  const params = new URLSearchParams();
+  if (state.layer) params.set("layer", state.layer);
+  const query = params.size ? `?${params}` : "";
+
   const [measurements, features] = await Promise.all([
-    request(`${API}${id}/measurements/`),
-    request(`${API}${id}/features/`),
+    request(`${API}${id}/measurements/${query}`),
+    request(`${API}${id}/features/${query}`),
   ]);
+  if (id !== state.currentId) return; // another file was opened while this one loaded
+
   state.measurements = measurements;
+  state.activeIndex = null;
   state.names = new Map(features.features.map((f) => [f.id, featureName(f.properties)]));
   renderSummary();
   renderTable();
   drawFeatures(features);
+
+  // Downloads follow the same filter as the table.
+  $("download-csv").href = `${API}${id}/export/${query}`;
+  params.set("format", "geojson");
+  $("download-geojson").href = `${API}${id}/export/?${params}`;
+}
+
+function renderLayerFilter() {
+  const box = $("layer-filter");
+  const layers = state.info?.status === "COMPLETED" ? state.info.layers : [];
+  box.hidden = layers.length < 2;
+  if (box.hidden) return;
+
+  const chips = [{ name: null, label: "All layers", count: state.info.feature_count }]
+    .concat(layers.map((l) => ({ name: l.name, label: l.name, count: l.feature_count })));
+  box.innerHTML = chips.map((chip, i) => `
+    <button type="button" class="chip ${chip.name === state.layer ? "active" : ""}" data-chip="${i}"
+            aria-pressed="${chip.name === state.layer}">${escapeHtml(chip.label)}<span>${chip.count}</span></button>`).join("");
+  box.querySelectorAll("[data-chip]").forEach((button) => button.addEventListener("click", async () => {
+    state.layer = chips[Number(button.dataset.chip)].name;
+    renderLayerFilter();
+    await loadResults();
+  }));
 }
 
 function renderWarnings(warnings) {
@@ -309,6 +375,8 @@ $("delete-btn").addEventListener("click", async () => {
   drawFeatures({ type: "FeatureCollection", features: [] });
   await loadFiles();
 });
+
+loadSamples().catch(() => {}); // samples are optional; the page works without them
 
 loadFiles()
   .then(() => {

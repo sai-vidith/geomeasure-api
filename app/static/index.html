@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>geomeasure</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='3' width='10' height='10' fill='none' stroke='%23b85c1e' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -22,12 +23,13 @@
     <aside class="sidebar">
       <section class="panel">
         <h2>Upload</h2>
-        <label class="dropzone" id="dropzone">
+        <label class="dropzone" id="dropzone" tabindex="0">
           <input type="file" id="file-input" accept=".zip,.kml,.kmz" hidden>
           <span class="dropzone-title">Drop a file here or browse</span>
           <span class="dropzone-hint">Shapefile (.zip), KML or KMZ</span>
         </label>
         <p class="upload-status" id="upload-status" role="status"></p>
+        <p class="samples" id="samples" hidden></p>
       </section>
 
       <section class="panel files-panel">
@@ -51,7 +53,12 @@
             <h1 id="file-title"></h1>
             <p class="meta" id="file-meta"></p>
           </div>
-          <div class="details-actions">
+          <div class="details-actions" id="result-actions">
+            <span class="downloads">
+              Download
+              <a class="btn-quiet" id="download-csv" download>CSV</a>
+              <a class="btn-quiet" id="download-geojson" download>GeoJSON</a>
+            </span>
             <label class="unit-select">
               Area in
               <select id="area-unit">
@@ -60,12 +67,14 @@
                 <option value="ac">acres</option>
               </select>
             </label>
-            <button type="button" class="btn-quiet" id="delete-btn">Delete</button>
           </div>
+          <button type="button" class="btn-quiet btn-danger" id="delete-btn">Delete</button>
         </div>
 
         <div class="error-box" id="error-box" hidden></div>
         <ul class="warnings" id="warnings" hidden></ul>
+
+        <div class="layer-filter" id="layer-filter" role="group" aria-label="Filter by layer" hidden></div>
 
         <dl class="summary" id="summary"></dl>
 
@@ -90,7 +99,7 @@
       </section>
 
       <section class="empty" id="empty-state">
-        <p>Upload a Shapefile or KML to see its features on the map with area and length in metric units.</p>
+        <p>Upload a Shapefile, KML or KMZ to see its features on the map with area and length in metric units.<br>Or pick one of the samples on the left.</p>
       </section>
     </main>
   </div>

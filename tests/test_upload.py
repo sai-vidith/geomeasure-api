@@ -62,6 +62,17 @@ def test_zip_holding_a_kml_gets_a_helpful_message(upload, workdir):
     assert "rename the archive to .kmz" in response.json()["detail"]
 
 
+def test_bundled_samples_are_listed_and_processable(client, upload):
+    samples = client.get("/api/samples/").json()
+    names = {sample["name"] for sample in samples}
+    assert {"site_survey.kml", "site_survey.kmz", "parcels_utm.zip"} <= names
+
+    # Every sample we ship must actually work.
+    for sample in samples:
+        content = client.get(sample["url"]).content
+        assert upload(sample["name"], content).status_code == 201, sample["name"]
+
+
 def test_get_file_info(client, upload, workdir):
     file_id = upload("survey.kml", kml_bytes(_square_frame(), workdir)).json()["id"]
 

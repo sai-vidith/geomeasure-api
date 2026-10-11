@@ -183,7 +183,8 @@ button, select { font: inherit; color: inherit; }
   margin-bottom: 14px;
 }
 .meta { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
-.details-actions { display: flex; align-items: center; gap: 12px; }
+.details-head > div:first-child { margin-right: auto; }
+.details-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .unit-select { font-size: 13px; color: var(--muted); }
 .unit-select select {
   margin-left: 4px;
@@ -199,7 +200,45 @@ button, select { font: inherit; color: inherit; }
   padding: 3px 10px;
   cursor: pointer;
 }
-.btn-quiet:hover { border-color: var(--fail); color: var(--fail); }
+.btn-quiet:hover { border-color: var(--ink); }
+.btn-danger:hover { border-color: var(--fail); color: var(--fail); }
+a.btn-quiet { display: inline-block; text-decoration: none; color: inherit; }
+.downloads { font-size: 13px; color: var(--muted); }
+.downloads a { color: var(--ink); margin-left: 4px; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Sample shortcuts under the dropzone */
+.samples { margin: 8px 0 0; font-size: 12px; color: var(--muted); line-height: 1.8; }
+.samples button {
+  display: block;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-right: 8px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.samples button:hover { color: var(--ink); }
+
+/* Layer filter */
+.layer-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chip {
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 2px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chip span { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-left: 4px; }
+.chip:hover { border-color: var(--ink); }
+.chip.active { background: var(--ink); border-color: var(--ink); color: #fff; }
+.chip.active span { color: #d5d2ca; }
 
 .error-box, .warnings {
   border-radius: var(--radius);
@@ -263,5 +302,5 @@ table.features { width: 100%; border-collapse: collapse; font-size: 13px; }
   .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary div:nth-child(3) { border-left: 0; }
   .summary div:nth-child(n + 3) { border-top: 1px solid var(--line); }
-  .details-head { flex-direction: column; }
+  .details-head { flex-wrap: wrap; }
 }
