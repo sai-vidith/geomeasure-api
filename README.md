@@ -1,11 +1,29 @@
 # geomeasure-api
 
-A FastAPI service that accepts a Shapefile (as a .zip) or a KML file, extracts every feature with its geometry, CRS and attributes, and returns area and length in metres. Coordinates are never measured in degrees: each geometry is reprojected into a suitable projected CRS first.
+[![tests](https://github.com/sai-vidith/geomeasure-api/actions/workflows/tests.yml/badge.svg)](https://github.com/sai-vidith/geomeasure-api/actions/workflows/tests.yml)
 
-It also ships a small web page for uploading files and checking the results on a map.
+A FastAPI service that accepts a Shapefile (as a .zip), a KML or a KMZ file, extracts every feature with its geometry, CRS and attributes, and returns area and length in metres. Coordinates are never measured in degrees: each geometry is reprojected into a suitable projected CRS first.
+
+It also ships a small web page for uploading files, checking the results on a map and downloading them as CSV or GeoJSON.
+
+![The web UI showing a sample survey: three plots, two access tracks and three control points on a map, with a table of areas and lengths](assets/screenshot.png)
+
+## Quick start
+
+```bash
+git clone https://github.com/sai-vidith/geomeasure-api.git
+cd geomeasure-api
+python -m venv .venv
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python -m app
+```
+
+The last command starts the server and opens http://localhost:8000. Click one of the sample files under the upload box to see it working without finding data first.
 
 ## Contents
 
+- [Quick start](#quick-start)
 - [Setup](#setup)
 - [Running](#running)
 - [API](#api)
@@ -44,21 +62,27 @@ Optional configuration through environment variables (or a `.env` file):
 ## Running
 
 ```bash
-uvicorn app.main:app --reload
+python -m app                 # starts the server and opens the web UI
+python -m app --port 9000     # different port
+python -m app --no-browser    # server only
+python -m app --reload        # restart on code changes
 ```
+
+`uvicorn app.main:app --reload` works too, if you prefer running uvicorn directly.
 
 - Web UI: http://localhost:8000
 - Interactive API docs (Swagger): http://localhost:8000/docs
 
-The `samples/` folder has files to try:
+The `samples/` folder has files to try. The web UI lists them under the upload box, and one click uploads the file:
 
 | File | What it shows |
 |---|---|
 | `site_survey.kml` | Three KML folders: plots (polygons), access tracks (lines), ground control points |
+| `site_survey.kmz` | The same KML zipped, the way Google Earth saves it |
 | `parcels_utm.zip` | The same plots as a shapefile in UTM zone 43N (EPSG:32643) |
 | `parcels_no_prj.zip` | The plots in WGS84 with the `.prj` removed, to show CRS inference |
 
-All three produce the same total plot area, 277,466.821 m², which is a useful sanity check that the CRS handling is consistent across formats.
+All of them produce the same total plot area, 277,466.821 m², which is a useful sanity check that the CRS handling is consistent across formats.
 
 Run `python scripts/make_samples.py` to regenerate them.
 
@@ -66,13 +90,17 @@ Run `python scripts/make_samples.py` to regenerate them.
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/api/files/` | Upload and process a `.zip` (Shapefile) or `.kml` |
+| `POST` | `/api/files/` | Upload and process a `.zip` (Shapefile), `.kml` or `.kmz` |
 | `GET` | `/api/files/` | List recent uploads |
 | `GET` | `/api/files/{id}/` | File information |
 | `GET` | `/api/files/{id}/measurements/` | Per-feature measurements and a summary |
 | `GET` | `/api/files/{id}/features/` | All features as GeoJSON with attributes |
+| `GET` | `/api/files/{id}/export/` | Download the results as CSV or GeoJSON |
 | `DELETE` | `/api/files/{id}/` | Delete an upload and its stored files |
+| `GET` | `/api/samples/` | Sample files bundled with the repo |
 | `GET` | `/health` | Liveness check |
+
+`measurements`, `features` and `export` all accept `?layer=<name>` and `?geometry_type=<type>` to narrow the result.
 
 ### Upload
 
@@ -106,7 +134,7 @@ Status codes:
 | Code | When |
 |---|---|
 | `201` | File processed. `status` is `COMPLETED`. |
-| `400` | Rejected before processing: wrong extension, empty file, over the size limit, not a zip, no `.shp` in the zip, or an archive entry that tries to escape the upload folder. Nothing is stored. |
+| `400` | Rejected before processing: wrong extension, empty file, over the size limit, not a zip, no `.shp` in the zip, no `.kml` in the KMZ, or an archive entry that tries to escape the upload folder. Nothing is stored. |
 | `422` | Accepted but GDAL could not read it (e.g. a truncated KML). The body is the stored record with `status: "FAILED"` and an `error` message, so it can still be looked up by id. |
 
 A shapefile with missing sidecar files is still processed where possible, and the response explains what was done:
@@ -141,7 +169,12 @@ curl http://localhost:8000/api/files/fd99e46f36ad/measurements/
     "total_length_m": 1636.465,
     "measured_features": 5,
     "unmeasured_features": 3,
-    "geometry_types": { "Polygon": 3, "LineString": 2, "Point": 3 }
+    "geometry_types": { "Polygon": 3, "LineString": 2, "Point": 3 },
+    "layers": [
+      { "name": "Plots", "feature_count": 3, "area_m2": 277466.821, "length_m": 0.0 },
+      { "name": "Access tracks", "feature_count": 2, "area_m2": 0.0, "length_m": 1636.465 },
+      { "name": "Ground control points", "feature_count": 3, "area_m2": 0.0, "length_m": 0.0 }
+    ]
   },
   "features": [
     {
@@ -160,7 +193,7 @@ curl http://localhost:8000/api/files/fd99e46f36ad/measurements/
       "geometry_type": "LineString",
       "area_m2": null,
       "perimeter_m": null,
-      "length_m": 1001.065,
+      "length_m": 1001.064,
       "measurement_crs": "EPSG:32643",
       "note": null
     },
@@ -179,6 +212,15 @@ curl http://localhost:8000/api/files/fd99e46f36ad/measurements/
 ```
 
 (Trimmed to three features.) `measurement_crs` tells you which projection each number was computed in. `409` is returned if the file failed processing.
+
+To get one layer or one geometry type, add a filter. The summary then covers only the features returned:
+
+```bash
+curl "http://localhost:8000/api/files/fd99e46f36ad/measurements/?layer=Plots"
+curl "http://localhost:8000/api/files/fd99e46f36ad/measurements/?geometry_type=linestring"
+```
+
+An unknown layer name returns `404` with the list of layers that do exist in the file.
 
 ### Features
 
@@ -207,12 +249,33 @@ Returns a GeoJSON `FeatureCollection` with every feature's ID, geometry, CRS, at
 }
 ```
 
+### Export
+
+```bash
+curl -OJ "http://localhost:8000/api/files/fd99e46f36ad/export/"                  # site_survey_measurements.csv
+curl -OJ "http://localhost:8000/api/files/fd99e46f36ad/export/?format=geojson"   # site_survey.geojson
+```
+
+The CSV has one row per feature: the measurements (including `area_ha`), followed by the file's own attribute columns.
+
+```csv
+index,layer,geometry_type,area_m2,area_ha,perimeter_m,length_m,measurement_crs,note,Name
+0,Plots,Polygon,75459.393,7.545939,1109.57,,EPSG:32643,,Plot A
+3,Access tracks,LineString,,,,1001.064,EPSG:32643,,North access
+5,Ground control points,Point,,,,,,Point geometry: no measurement required,GCP-01
+```
+
+Two details that matter when the file is opened in Excel:
+- It starts with a UTF-8 byte-order mark, so non-English names are not garbled.
+- Any text cell beginning with `=`, `+`, `-` or `@` is prefixed with a quote. Attribute values come from uploaded files, and without this a crafted value would run as a formula.
+
 ## Architecture
 
 ### Application structure
 
 ```
 app/
+  __main__.py          `python -m app` launcher
   main.py              App setup, router and static file wiring
   config.py            Settings, overridable with GEOMEASURE_* env vars
   database.py          SQLAlchemy engine and session dependency
@@ -224,17 +287,19 @@ app/
     parser.py          Reading layers with GeoPandas, CRS inference, attribute cleanup
     measure.py         Choosing a projected CRS and computing area/length
     processing.py      Ties parser and measure together and fills the database rows
+    export.py          CSV export
   static/              Web UI (plain HTML, CSS and JS with Leaflet)
 tests/                 pytest suite
 samples/               Example files
 scripts/               Sample generator
+.github/workflows/     CI: runs the tests on every push
 ```
 
 Routes only deal with HTTP. Everything geospatial lives in `services/`, which has no FastAPI imports, so it can be tested directly or reused from a background worker later.
 
 ### File-processing flow
 
-1. **Validate.** The extension must be `.zip` or `.kml`. The upload is streamed to disk in 1 MB chunks and aborted once it passes the size limit, so a large file is never held in memory.
+1. **Validate.** The extension must be `.zip`, `.kml` or `.kmz`. The upload is streamed to disk in 1 MB chunks and aborted once it passes the size limit, so a large file is never held in memory.
 2. **Unpack (shapefiles only).**
    - Every zip entry's path is resolved before extraction and rejected if it would land outside the upload folder (zip slip).
    - Archives that would expand to more than 10x the upload limit are refused.
@@ -249,9 +314,10 @@ Routes only deal with HTTP. Everything geospatial lives in `services/`, which ha
      | `.prj` | CRS is inferred if possible (see CRS handling) |
      | `.shp` | Nothing to read, so the upload is rejected with `400` |
 
-3. **Read.** Each layer is loaded into a GeoDataFrame. A KML file is read **layer by layer**: GDAL exposes every KML `<Folder>` as a separate layer, and `geopandas.read_file()` without a layer name silently returns only the first one.
-4. **Extract.** For every feature the service stores a global index, layer name, geometry type, GeoJSON geometry (in the source CRS), CRS label and cleaned attributes. Cleaning drops nulls, NaN/NaT and KML rendering flags, and converts numpy and datetime values to plain JSON.
-5. **Measure** (next section), then save everything in one transaction. If any step raises, the record is saved as `FAILED` with the error message and no partial features.
+3. **Check (KMZ only).** A KMZ is a zip with a KML inside. GDAL reads it in place, so nothing is extracted; the service only confirms it is a real archive that contains a `.kml`. A plain `.zip` holding a KML is rejected with a message that says to upload the KML or rename the archive to `.kmz`.
+4. **Read.** Each layer is loaded into a GeoDataFrame. A KML file is read **layer by layer**: GDAL exposes every KML `<Folder>` as a separate layer, and `geopandas.read_file()` without a layer name silently returns only the first one.
+5. **Extract.** For every feature the service stores a global index, layer name, geometry type, GeoJSON geometry (in the source CRS), CRS label and cleaned attributes. Cleaning drops nulls, NaN/NaT and KML rendering flags, and converts numpy and datetime values to plain JSON.
+6. **Measure** (next section), then save everything in one transaction. If any step raises, the record is saved as `FAILED` with the error message and no partial features.
 
 ### Measurement calculation flow
 
@@ -319,9 +385,11 @@ Inside a UTM zone the scale factor stays between 0.9996 and about 1.001, so per-
 pytest
 ```
 
-36 tests, covering:
+48 tests, covering:
 
-- **Upload validation:** extension, empty file, non-zip, zip without `.shp`, zip slip, corrupt KML stored as `FAILED`, 404s.
+- **Upload validation:** extension, empty file, non-zip, zip without `.shp`, zip slip, corrupt KML stored as `FAILED`, 404s, KMZ with and without a KML inside.
+- **Bundled samples:** every file in `samples/` is uploaded and must process cleanly.
+- **Filters and export:** layer and geometry-type filters, per-layer subtotals, CSV columns and encoding, formula neutralising, GeoJSON download.
 - **Archives:** multiple distinct layers, duplicate copies, missing `.shx`, `.dbf` or `.prj` (with lon/lat and with projected coordinates), all missing parts reported in one warning, uppercase extensions in nested folders.
 - **Measurement accuracy against `pyproj.Geod`:**
   - polygons and lines in WGS84
@@ -336,6 +404,8 @@ pytest
 
 Test files are generated on the fly from known geometries (e.g. an exact 1000 m x 1000 m UTM square), so every expected value is computed rather than copied from a previous run.
 
+The same suite runs on GitHub Actions for every push, on Python 3.11 and 3.12 (see the badge at the top).
+
 ## Learnings
 
 - **"Read the file" is not one call.** I first assumed `geopandas.read_file()` returns everything in a KML. It returns the first folder only. Listing the layers with `pyogrio.list_layers()` and reading each one fixed it, and a test now guards it.
@@ -344,15 +414,18 @@ Test files are generated on the fly from known geometries (e.g. an exact 1000 m 
 - **Shapefiles are bundles.** Working through what each sidecar file does (`.shx` can be rebuilt, `.dbf` is optional for geometry, `.prj` is the CRS) changed my error handling from "reject anything incomplete" to "do what is possible and say what was skipped".
 - **Silent data loss in pandas.** A shapefile without a `.dbf` gave a DataFrame with rows but no columns, and `to_dict("records")` returned an empty list, so `zip()` dropped every feature without an error. Using `zip(..., strict=True)` makes this kind of mismatch fail loudly.
 
+- **Thinking about the first five minutes.** My first version rejected `.kmz`, which is what Google Earth saves by default, and gave results only as JSON. Neither was a bug, but both would have stopped a real user straight away. Adding KMZ, CSV export and one-click samples took far less code than the CRS work and probably matters more to someone trying the tool.
+
 ## Future scope
 
 - **Background processing** with a task queue (Celery/RQ or arq) for very large files, using the existing `PROCESSING` status and polling `GET /api/files/{id}/`.
-- **More formats:** GeoJSON, GeoPackage and KMZ are a few lines each, since GDAL already reads them.
+- **More formats:** GeoJSON and GeoPackage are a few lines each, since GDAL already reads them.
+- **Loose shapefile parts:** accept `.shp`, `.shx`, `.dbf` and `.prj` selected together, so users do not have to zip them first.
 - **PostGIS** for storage and spatial queries, plus Alembic migrations instead of `create_all`.
 - **Pagination** on the measurements and features endpoints for files with tens of thousands of features.
 - **Geodesic measurements** as an option (`?method=geodesic`), useful for features that span several UTM zones.
 - **Antimeridian-crossing geometries** (e.g. Pacific islands) need splitting before the centroid-based zone selection is reliable.
-- **Docker image and CI** (GitHub Actions running the test suite).
+- **Docker image** for deployment.
 - **3D measurements.** Surface area and slope-aware length using the Z values that drone surveys usually carry; currently Z is ignored and results are planimetric.
 
 ## Architecture diagram
@@ -366,13 +439,15 @@ flowchart TD
         Info["GET /api/files/{id}/"]
         Meas["GET /api/files/{id}/measurements/"]
         Feat["GET /api/files/{id}/features/"]
+        Export["GET /api/files/{id}/export/"]
     end
 
     subgraph Services["app/services"]
-        Storage["storage.py<br/>validate, stream to disk,<br/>safe unzip, find layers,<br/>drop duplicates, check sidecars"]
+        Storage["storage.py<br/>validate, stream to disk,<br/>safe unzip, find layers,<br/>drop duplicates, check sidecars,<br/>check KMZ"]
         Parser["parser.py<br/>read every layer with GeoPandas,<br/>infer missing CRS, clean attributes"]
         Measure["measure.py<br/>repair invalid polygons,<br/>pick UTM zone per feature,<br/>reproject, area / length in metres"]
         Processing["processing.py<br/>orchestrate, build Feature rows,<br/>mark COMPLETED or FAILED"]
+        Csv["export.py<br/>CSV rows, formula-safe cells"]
     end
 
     Disk[("data/uploads/{id}/<br/>original + extracted files")]
@@ -382,6 +457,7 @@ flowchart TD
     Client --> Info
     Client --> Meas
     Client --> Feat
+    Client --> Export
 
     Upload -->|"1. save and unpack"| Storage
     Storage --> Disk
@@ -394,5 +470,7 @@ flowchart TD
     Info --> DB
     Meas --> DB
     Feat --> DB
+    Export --> DB
+    Export --> Csv
     Feat -.->|"reproject to WGS84"| Measure
 ```
